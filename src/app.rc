@@ -1,4 +1,64 @@
 #include <windows.h>
 #include "resource.h"
+#ifdef VOIDSENTINEL_UI_TEST
+1 RT_MANIFEST "ui-test.manifest"
+#else
 1 RT_MANIFEST "app.manifest"
+#endif
 IDI_VOID_SENTINEL ICON "../assets/icons/VoidSentinel.windows.ico"
+
+1 VERSIONINFO
+FILEVERSION 0,3,0,0
+PRODUCTVERSION 0,3,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "VoidSentinel - Application file activity monitor\0"
+            VALUE "FileVersion", "0.3.0\0"
+            VALUE "InternalName", "VoidSentinel\0"
+            VALUE "OriginalFilename", "VoidSentinel.exe\0"
+            VALUE "ProductName", "VoidSentinel\0"
+            VALUE "ProductVersion", "0.3.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+
+IDD_RULES DIALOGEX 0, 0, 620, 295
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "VoidSentinel - Filter rules"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "Include overrides Exclude and Background. Folder rules match the folder and all descendants.", -1, 10, 8, 600, 14
+    LISTBOX 1001, 10, 25, 600, 60, LBS_NOTIFY | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP | WS_BORDER
+    LTEXT "A&ction", -1, 10, 93, 45, 12
+    COMBOBOX 1002, 55, 90, 115, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT "&Match", -1, 180, 93, 40, 12
+    COMBOBOX 1003, 220, 90, 165, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL "Enabled", 1007, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 410, 92, 80, 12
+    LTEXT "&Path / pattern", -1, 10, 122, 70, 12
+    EDITTEXT 1004, 85, 118, 435, 16, ES_AUTOHSCROLL
+    PUSHBUTTON "Browse...", 1016, 530, 118, 80, 17
+    LTEXT "Applicatio&n", -1, 10, 147, 70, 12
+    EDITTEXT 1005, 85, 143, 260, 16, ES_AUTOHSCROLL
+    LTEXT "Optional EXE name / path; * and ? supported", -1, 355, 147, 255, 12
+    LTEXT "Description", -1, 10, 172, 70, 12
+    EDITTEXT 1006, 85, 168, 525, 16, ES_AUTOHSCROLL
+    PUSHBUTTON "&Add", 1010, 10, 195, 70, 19
+    PUSHBUTTON "Update selected", 1011, 90, 195, 100, 19
+    PUSHBUTTON "Remove selected", 1012, 200, 195, 100, 19
+    PUSHBUTTON "Defaults", 1015, 310, 195, 75, 19
+    PUSHBUTTON "Import (replace)...", 1013, 395, 195, 105, 19
+    PUSHBUTTON "Export...", 1014, 510, 195, 100, 19
+    LTEXT "Portable paths: %LOCALAPPDATA%, %APPDATA%, %PROGRAMDATA%, %USERPROFILE%. No blanket exclusions.", -1, 10, 224, 600, 20
+    LTEXT "Changes apply after Save rules. Import replaces this list; Cancel keeps your current rules.", 1020, 10, 246, 600, 16
+    DEFPUSHBUTTON "&Save rules", IDOK, 425, 269, 90, 20
+    PUSHBUTTON "Cancel", IDCANCEL, 525, 269, 85, 20
+END

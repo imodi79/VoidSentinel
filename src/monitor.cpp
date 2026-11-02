@@ -10,6 +10,7 @@ namespace
 const GUID FileGuid = {0x90cbdc39, 0x4a3e, 0x11d1, {0x84, 0xf4, 0x00, 0x00, 0xf8, 0x04, 0x64, 0xe3}};
 const GUID ThreadGuid = {0x3d6fa8d1, 0xfe05, 0x11d0, {0x9d, 0xda, 0x00, 0xc0, 0x4f, 0xd7, 0xba, 0x7c}};
 const GUID KernelProcessGuid = {0x22fb2cd6, 0x0e7b, 0x422b, {0xa0, 0xc7, 0x2f, 0xad, 0x1f, 0xd0, 0xe7, 0x16}};
+const GUID KernelFileGuid = {0xedd08927, 0x9cc4, 0x4e65, {0xb9, 0x70, 0xc2, 0x56, 0x0f, 0xb5, 0xc2, 0x89}};
 std::vector<BYTE> Property(EVENT_RECORD *e, const wchar_t *name)
 {
     PROPERTY_DATA_DESCRIPTOR d{};
@@ -117,6 +118,8 @@ bool Monitor::Start(const std::vector<std::wstring> &targets, bool children, std
     unmatched = 0;
     traceError = 0;
     results_.Clear();
+    sequence_ = 0;
+    renamePaths_.clear();
     objectKinds_.clear();
     processes_.clear();
     threads_.clear();
@@ -185,6 +188,14 @@ bool Monitor::Start(const std::vector<std::wstring> &targets, bool children, std
         return false;
     }
     // Snapshot after enabling events, so short-lived processes also have queued start events.
+    rc = EnableTraceEx2(session_, &KernelFileGuid, EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+                        TRACE_LEVEL_INFORMATION, 0x800, 0, 0, nullptr);
+    if (rc != ERROR_SUCCESS)
+    {
+        error = L"Rename path tracking could not start.\n" + ErrorText(rc);
+        Stop();
+        return false;
+    }
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0);
     if (snap != INVALID_HANDLE_VALUE)
     {
@@ -200,6 +211,11 @@ bool Monitor::Start(const std::vector<std::wstring> &targets, bool children, std
                 if (pe.th32ProcessID == GetCurrentProcessId())
                     sel = false;
                 processes_[pe.th32ProcessID] = {path, sel};
+                if (sel)
+                {
+                    processes_[pe.th32ProcessID].root = path;
+                    processes_[pe.th32ProcessID].lineage = path;
+                }
             } while (Process32NextW(snap, &pe));
         if (children_ && Process32FirstW(snap, &pe))
         {
@@ -215,6 +231,8 @@ bool Monitor::Start(const std::vector<std::wstring> &targets, bool children, std
                         parent != processes_.end() && parent->second.selected)
                     {
                         child.selected = true;
+                        child.root = parent->second.root;
+                        child.lineage = parent->second.lineage + L" -> " + child.path;
                         changed = true;
                     }
                 } while (Process32NextW(snap, &pe));
@@ -324,7 +342,8 @@ bool Monitor::Selected(DWORD pid, std::wstring &path)
         for (auto &t : targets_)
             if (Same(t, path))
                 selected = true;
-        it = processes_.emplace(pid, Proc{path, selected}).first;
+        it =
+            processes_.emplace(pid, Proc{path, selected, selected ? path : L"", selected ? path : L""}).first;
     }
     path = it->second.path;
     return it->second.selected;
@@ -369,12 +388,19 @@ void Monitor::Event(EVENT_RECORD *e)
         for (auto &target : targets_)
             if (Same(target, path))
                 selected = true;
+        bool directSelected = selected;
         auto parent = processes_.find(static_cast<DWORD>(Number(e, L"ParentProcessID")));
         if (children_ && parent != processes_.end() && parent->second.selected)
             selected = true;
         if (pid == GetCurrentProcessId())
             selected = false;
-        processes_[pid] = {path, selected};
+        Proc proc{path, selected, path, path};
+        if (!directSelected && children_ && parent != processes_.end() && parent->second.selected)
+        {
+            proc.root = parent->second.root;
+            proc.lineage = parent->second.lineage + L" -> " + path;
+        }
+        processes_[pid] = std::move(proc);
         return;
     }
     if (IsEqualGUID(e->EventHeader.ProviderId, ThreadGuid))
@@ -385,6 +411,24 @@ void Monitor::Event(EVENT_RECORD *e)
             threads_.erase(tid);
         else if ((op == 1 || op == 3) && tid && pid)
             threads_[tid] = pid;
+        return;
+    }
+    if (IsEqualGUID(e->EventHeader.ProviderId, KernelFileGuid))
+    {
+        if (e->EventHeader.EventDescriptor.Id == 27)
+        {
+            auto irp = Number(e, L"Irp");
+            if (!irp)
+                irp = Number(e, L"IrpPtr");
+            auto name = String(e, L"FilePath");
+            if (name.empty())
+                name = String(e, L"FileName");
+            if (irp && !name.empty() && pending_.contains(irp))
+            {
+                if (renamePaths_.size() < 50000)
+                    renamePaths_[irp] = name;
+            }
+        }
         return;
     }
     if (!IsEqualGUID(e->EventHeader.ProviderId, FileGuid))
@@ -436,6 +480,25 @@ void Monitor::Event(EVENT_RECORD *e)
         }
         else
             p.row.result = status == 0x103 ? L"Pending (not confirmed)" : L"Success";
+        if (p.opcode == 71)
+        {
+            auto rename = renamePaths_.find(irp);
+            if (rename != renamePaths_.end())
+            {
+                p.row.destination = rename->second;
+                for (auto &[device, drive] : volumes_)
+                    if (p.row.destination.starts_with(device + L"\\"))
+                    {
+                        p.row.destination = drive + p.row.destination.substr(device.size());
+                        break;
+                    }
+                if (p.row.result == L"Success")
+                {
+                    names_[p.object] = p.row.destination;
+                }
+                renamePaths_.erase(rename);
+            }
+        }
         Emit(std::move(p.row));
         return;
     }
@@ -497,6 +560,12 @@ void Monitor::Event(EVENT_RECORD *e)
                                                   : ItemKind::Unknown;
     }
     Row row{Timestamp(e->EventHeader.TimeStamp.QuadPart), app, operation, path, L"Requested", pid};
+    row.sequence = ++sequence_;
+    if (auto proc = processes_.find(pid); proc != processes_.end())
+    {
+        row.rootApp = proc->second.root;
+        row.lineage = proc->second.lineage;
+    }
     if (auto kind = objectKinds_.find(object); kind != objectKinds_.end())
         row.kind = kind->second;
     if (op == 69)
@@ -533,14 +602,25 @@ void Monitor::Event(EVENT_RECORD *e)
 }
 void Monitor::Emit(Row row)
 {
+    if (!row.sequence)
+        row.sequence = ++sequence_;
     if (row.path.starts_with(L"[unresolved file object"))
         ++unresolved;
     std::lock_guard lock(mutex_);
     results_.Add(std::move(row));
     ++recorded;
 }
-std::vector<Row> Monitor::Snapshot()
+std::vector<Row> Monitor::RawSnapshot()
 {
     std::lock_guard lock(mutex_);
-    return results_.Sorted();
+    return results_.Copy();
+}
+std::vector<Row> Monitor::Snapshot()
+{
+    ResultSet copy;
+    {
+        std::lock_guard lock(mutex_);
+        copy = results_;
+    }
+    return copy.Sorted();
 }

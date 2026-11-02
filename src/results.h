@@ -17,6 +17,10 @@ struct Row
     ItemKind kind = ItemKind::Unknown;
     unsigned long long count = 1, successes = 0, failures = 0, unconfirmed = 0;
     std::wstring lastTime;
+    std::wstring rootApp, lineage, destination;
+    unsigned long long sequence = 0;
+    unsigned long long lastSequence = 0;
+    std::wstring originalPath;
 };
 struct ResultKey
 {
@@ -35,6 +39,7 @@ class ResultSet
         rows_.clear();
     }
     std::vector<Row> Sorted() const;
+    std::vector<Row> Copy() const;
 
   private:
     std::map<ResultKey, Row, KeyLess> rows_;

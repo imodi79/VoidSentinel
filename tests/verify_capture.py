@@ -1,4 +1,4 @@
-"""Validate databases produced by VoidSentinel --capture-test DIRECTORY.
+"""Validate CSV captures produced by VoidSentinel --capture-test DIRECTORY.
 
 Uses only the Python standard library; Python is a development-only test tool.
 """
@@ -50,3 +50,30 @@ assert any(app.lower().endswith("unrelated-helper.exe") for app, *_ in stress), 
 verify_operations(stress, "\\explicit-target")
 print("PASS: Unicode file/directory operations, child inclusion/exclusion, unrelated process exclusion,")
 print("      multiple targets, restart, 10000 writes, CSV ordering, per-operation aggregation.")
+
+with (directory / 'meaningful.csv').open(encoding='utf-8-sig', newline='') as stream:
+    summary = list(csv.DictReader(stream))
+shared = [row for row in summary if row['Path'].endswith('\\shared.txt')]
+assert len(shared) == 1
+assert 'Created' in shared[0]['Operation'] and 'Written' in shared[0]['Operation']
+assert 'child-helper.exe' in shared[0]['Process chain']
+assert shared[0]['Application path'] == shared[0]['Root application']
+saved = [row for row in summary if row['Path'].endswith('\\saved-document.txt')]
+assert len(saved) == 1 and 'Saved via rename' in saved[0]['Operation']
+assert saved[0]['Original path'].endswith('\\atomic-save.tmp')
+assert not any(row['Path'].endswith(('\\atomic-save.tmp', '\\ephemeral.tmp')) for row in summary)
+assert not any(row['Path'].startswith('[unresolved') for row in summary)
+assert all(int(row['Failures']) == 0 and int(row['Unconfirmed']) == 0 for row in summary)
+with (directory / 'full.csv').open(encoding='utf-8-sig', newline='') as stream:
+    full = list(csv.DictReader(stream))
+assert any(row['Path'].endswith('\\ephemeral.tmp') for row in full)
+assert any(int(row['Failures']) > 0 for row in full)
+assert any(row['Destination'].endswith('\\saved-document.txt') for row in full)
+print('PASS: root/child summaries, successful-only view, observed rename destination, atomic save,')
+print('      transient filtering, unresolved path filtering, full-footprint recovery of hidden records.')
+with (directory/'worker-meaningful.csv').open(encoding='utf-8-sig',newline='') as stream:
+    worker=list(csv.DictReader(stream))
+assert any(row['Path'].endswith('\\shared.txt') and 'child-helper.exe' in row['Process chain'] for row in worker)
+assert any(row['Path'].endswith('\\saved-document.txt') for row in worker)
+assert not any(row['Path'].endswith('\\ephemeral.tmp') for row in worker)
+print('PASS: background session start/stop, final publication, live ETW semantic snapshot.')

@@ -40,11 +40,20 @@ void ResultSet::Add(Row row)
     row.failures = row.result.starts_with(L"Failed:") ? 1 : 0;
     row.unconfirmed = !row.successes && !row.failures ? 1 : 0;
     row.lastTime = row.time;
-    ResultKey key{row.app, row.path, row.operation};
+    row.lastSequence = row.sequence;
+    ResultKey key{row.rootApp + L"\n" + row.app, row.path, row.operation + L"\n" + row.destination};
     auto [it, inserted] = rows_.try_emplace(std::move(key), row);
     if (inserted)
         return;
     auto &existing = it->second;
+    if (!row.lineage.empty() && existing.lineage.find(row.lineage) == std::wstring::npos)
+    {
+        if (!existing.lineage.empty())
+            existing.lineage += L"; ";
+        existing.lineage += row.lineage;
+    }
+    existing.lastSequence = std::max(existing.lastSequence, row.sequence);
+    existing.sequence = std::min(existing.sequence, row.sequence);
     ++existing.count;
     existing.successes += row.successes;
     existing.failures += row.failures;
@@ -59,6 +68,14 @@ void ResultSet::Add(Row row)
         existing.pid = 0;
     if (row.kind != ItemKind::Unknown)
         existing.kind = row.kind;
+}
+std::vector<Row> ResultSet::Copy() const
+{
+    std::vector<Row> out;
+    out.reserve(rows_.size());
+    for (const auto &[key, row] : rows_)
+        out.push_back(row);
+    return out;
 }
 std::vector<Row> ResultSet::Sorted() const
 {
@@ -94,17 +111,29 @@ const wchar_t *KindName(ItemKind kind)
 }
 bool SaveCsv(const std::wstring &path, const std::vector<Row> &rows)
 {
-    std::ofstream out(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
+    auto temporary = path + L".tmp-" + std::to_wstring(GetCurrentProcessId());
+    std::ofstream out(std::filesystem::path(temporary), std::ios::binary | std::ios::trunc);
     if (!out)
         return false;
     out << "\xEF\xBB\xBF"
         << "Application,Application path,Type,Path,Operation,Count,First seen,Last "
-           "seen,Result,Successes,Failures,Unconfirmed\r\n";
+           "seen,Result,Successes,Failures,Unconfirmed,Root application,Process chain,Destination,Original "
+           "path\r\n";
     for (auto &row : rows)
         out << Cell(AppName(row.app)) << ',' << Cell(row.app) << ',' << Cell(KindName(row.kind)) << ','
             << Cell(row.path) << ',' << Cell(row.operation) << ',' << row.count << ',' << Cell(row.time)
             << ',' << Cell(row.lastTime) << ',' << Cell(row.result) << ',' << row.successes << ','
-            << row.failures << ',' << row.unconfirmed << "\r\n";
+            << row.failures << ',' << row.unconfirmed << ',' << Cell(row.rootApp) << ',' << Cell(row.lineage)
+            << ',' << Cell(row.destination) << ',' << Cell(row.originalPath) << "\r\n";
     out.flush();
-    return out.good();
+    bool ok = out.good();
+    out.close();
+    ok = ok && out.good();
+    if (!ok ||
+        !MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileW(temporary.c_str());
+        return false;
+    }
+    return true;
 }

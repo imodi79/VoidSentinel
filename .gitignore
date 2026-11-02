@@ -1,5 +1,10 @@
 /build/
 /out/
+/dist/
+__pycache__/
+*.pyc
+/filter-test-fixtures/
+/results-test.csv
 /.vs/
 *.db
 *.db-wal

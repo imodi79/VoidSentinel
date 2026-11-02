@@ -23,6 +23,7 @@ class Monitor
     bool Start(const std::vector<std::wstring> &targets, bool children, std::wstring &error);
     void Stop();
     std::vector<Row> Snapshot();
+    std::vector<Row> RawSnapshot();
     void RefreshStats();
     std::atomic<unsigned long long> recorded{0}, dropped{0}, unresolved{0}, unmatched{0};
     std::atomic<ULONG> lost{0}, traceError{0};
@@ -37,6 +38,7 @@ class Monitor
     {
         std::wstring path;
         bool selected = false;
+        std::wstring root, lineage;
     };
     struct Pending
     {
@@ -60,4 +62,6 @@ class Monitor
     std::vector<std::pair<std::wstring, std::wstring>> volumes_;
     ResultSet results_;
     std::unordered_map<ULONGLONG, ItemKind> objectKinds_;
+    std::unordered_map<ULONGLONG, std::wstring> renamePaths_;
+    unsigned long long sequence_ = 0;
 };

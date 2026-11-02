@@ -10,4 +10,8 @@ if (-not (Test-Path -LiteralPath $cmakePath)) { throw 'Install C++ CMake tools f
 if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 & $cmakePath --build "$PSScriptRoot\out" --config $Configuration
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
+$distribution = Join-Path $PSScriptRoot 'dist'
+New-Item -ItemType Directory -Force -Path $distribution | Out-Null
+Copy-Item -LiteralPath "$PSScriptRoot\out\$Configuration\VoidSentinel.exe" -Destination (Join-Path $distribution 'VoidSentinel.exe')
 Write-Output "Executable: $PSScriptRoot\out\$Configuration\VoidSentinel.exe"
+Write-Output "Portable application: $distribution\VoidSentinel.exe"

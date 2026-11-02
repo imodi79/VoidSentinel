@@ -9,6 +9,12 @@ Choose one or more applications, start monitoring, and use them as usual. VoidSe
 
 The default **Meaningful changes** view combines related operations into readable file summaries and hides common background activity. Switch to **Full application footprint** to inspect the technical details, customize reusable filter rules, and export the current results to CSV.
 
+## Download
+
+**[Download VoidSentinel 1.0 for Windows 11 x64](https://github.com/imodi79/VoidSentinel/releases/tag/v1.0.0)**
+
+Download the portable ZIP, extract it, and open `VoidSentinel.exe`. See [Quick start](docs/en/quick-start.md) for your first recording.
+
 ## Documentation
 
 - [User guide](docs/en/README.md) — complete English instructions, starting with your first recording.
